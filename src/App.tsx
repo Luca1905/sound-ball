@@ -12,14 +12,14 @@ type Burst = {
 }
 
 export default function Component() {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const asciiCanvasRef = useRef<HTMLCanvasElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const asciiCanvasRef = useRef<HTMLCanvasElement | null>(null)
 
-  const animationRef = useRef<number>()
-  const audioContextRef = useRef<AudioContext>()
-  const analyserRef = useRef<AnalyserNode>()
-  const dataArrayRef = useRef<Uint8Array>()
-  const streamRef = useRef<MediaStream>()
+  const animationRef = useRef<number | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const dataArrayRef = useRef<Uint8Array | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
 
   // ASCII characters from darkest to lightest
   const asciiChars = " .:-=+*#%@"
@@ -51,7 +51,7 @@ export default function Component() {
   const smoothVolumeRef = useRef(0)
   const beatCooldownRef = useRef(0)
 
-  const addParticles = (intensity: number, canvas: HTMLCanvasElement) => {
+  const addParticles = (intensity: number) => {
     const ball = ballRef.current
     const particleCount = Math.floor(intensity * 6)
 
@@ -100,7 +100,6 @@ export default function Component() {
         maxRadius: Math.hypot(w, h) * (0.25 + Math.random() * 0.3),
       })
     }
-    // Keep memory in check
     if (burstsRef.current.length > 40) {
       burstsRef.current.splice(0, burstsRef.current.length - 40)
     }
@@ -157,7 +156,7 @@ export default function Component() {
     const cy = h / 2
     const diag = Math.hypot(w, h)
 
-    // Radial ring pulses (expanding circles)
+    // Radial ring pulses
     const ringCount = 5 + Math.floor(volume * 5)
     const ringSpeed = 0.25 + volume * 1.4
     const lw = 6 + volume * 26
@@ -189,7 +188,8 @@ export default function Component() {
       for (let x = -40; x <= w + 40; x += 14) {
         const y =
           yBase +
-          Math.sin(x * freq + t * speed + phase) * (baseAmp * (0.6 + j / 7))
+          Math.sin(x * freq + t * speed + phase) *
+            (baseAmp * (0.6 + j / 7))
         if (x === -40) ctx.moveTo(x, y)
         else ctx.lineTo(x, y)
       }
@@ -198,7 +198,7 @@ export default function Component() {
       ctx.stroke()
     }
 
-    // Vertical waves (fewer, thicker)
+    // Vertical waves
     const vCount = 3
     const baseAmpV = 30 + volume * 160
     const freqV = 0.013 + volume * 0.018
@@ -237,7 +237,6 @@ export default function Component() {
 
     if (canvas.width <= 0 || canvas.height <= 0) return
 
-    // Tweak for quality/perf. Smaller = more detail but heavier.
     const charWidth = 5
     const charHeight = 10
     const cols = Math.floor(canvas.width / charWidth)
@@ -254,21 +253,19 @@ export default function Component() {
 
     const pixels = imageData.data
 
-    // Prepare ASCII canvas
     dstCtx.clearRect(0, 0, asciiCanvas.width, asciiCanvas.height)
     dstCtx.fillStyle = "black"
     dstCtx.fillRect(0, 0, asciiCanvas.width, asciiCanvas.height)
 
-    // Font setup
     const fontSize = Math.max(7, Math.floor(charHeight * 0.95))
-    dstCtx.font = `900 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`
+    dstCtx.font =
+      `900 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`
     dstCtx.textBaseline = "middle"
     dstCtx.textAlign = "center"
     dstCtx.imageSmoothingEnabled = false
 
     const volume = smoothVolumeRef.current
 
-    // Draw per cell
     for (let y = 0; y < rows; y++) {
       const drawY = y * charHeight + charHeight / 2
       for (let x = 0; x < cols; x++) {
@@ -281,16 +278,12 @@ export default function Component() {
         const g = pixels[idx + 1] || 0
         const b = pixels[idx + 2] || 0
 
-        // Perceived brightness → ASCII char
         const brightness = 0.2126 * r + 0.7152 * g + 0.0722 * b
         const bn = brightness / 255
         const charIndex = Math.floor(bn * (asciiChars.length - 1))
         const ch = asciiChars[charIndex]
         if (ch === " ") continue
 
-        // Audio-reactive pop:
-        // - Boost saturation by pulling channels toward the max
-        // - Boost brightness multiplicatively
         const maxC = Math.max(r, g, b)
         const satBoost = 0.25 + volume * 0.75
         const brightBoost = 0.7 + volume * 1.6
@@ -333,26 +326,26 @@ export default function Component() {
     let volume = 0
     let dominantFreq = 0
 
-    if (analyserRef.current && dataArrayRef.current) {
-      analyserRef.current.getByteFrequencyData(dataArrayRef.current)
+    const analyser = analyserRef.current
+    const dataArray = dataArrayRef.current
+    if (analyser && dataArray) {
+      analyser.getByteFrequencyData(dataArray)
 
-      const arr = dataArrayRef.current
       let sum = 0
       let maxAmp = 0
       let maxIdx = 0
-      for (let i = 0; i < arr.length; i++) {
-        const v = arr[i]
+      for (let i = 0; i < dataArray.length; i++) {
+        const v = dataArray[i]
         sum += v
         if (v > maxAmp) {
           maxAmp = v
           maxIdx = i
         }
       }
-      volume = (sum / arr.length) / 255
-      volume = Math.min(1, volume * 3) // global boost
-      dominantFreq = maxIdx / arr.length
+      volume = sum / dataArray.length / 255
+      volume = Math.min(1, volume * 3)
+      dominantFreq = maxIdx / dataArray.length
     } else {
-      // No mic: gentle LFO fallback
       const t = now
       volume = 0.2 + (Math.sin(t * 1.5) * 0.5 + 0.5) * 0.2
       dominantFreq = (Math.sin(now * 0.3) * 0.5 + 0.5) * 0.8
@@ -366,14 +359,10 @@ export default function Component() {
     const prevV = prevVolumeRef.current
     const vNow = smoothVolumeRef.current
     const rising = vNow - prevV
-    if (
-      vNow > 0.35 &&
-      rising > 0.08 &&
-      beatCooldownRef.current <= 0
-    ) {
+    if (vNow > 0.35 && rising > 0.08 && beatCooldownRef.current <= 0) {
       const burstCount = 2 + Math.floor(vNow * 5)
       spawnBursts(burstCount, w, h, ball.hue)
-      beatCooldownRef.current = 0.12 // cooldown seconds
+      beatCooldownRef.current = 0.12
     }
     prevVolumeRef.current = vNow
 
@@ -387,15 +376,15 @@ export default function Component() {
     ball.x = w / 2
     ball.y = h / 2
 
-    // Motion trail fade (less fade at high volume → brighter persistence)
-    const fade = 0.55 - vNow * 0.35 // 0.55→0.2
+    // Motion trail fade
+    const fade = 0.55 - vNow * 0.35
     ctx.fillStyle = `rgba(0, 0, 0, ${Math.max(0.18, fade)})`
     ctx.fillRect(0, 0, w, h)
 
-    // Waves that flood the screen with color
+    // Waves
     drawColorWaves(ctx, w, h, now, ball.hue, vNow)
 
-    // Draw the audio-reactive ball (vivid gradient)
+    // Ball
     const g = ctx.createRadialGradient(
       ball.x,
       ball.y,
@@ -416,7 +405,7 @@ export default function Component() {
     ctx.fill()
     ctx.restore()
 
-    // Inner core pop
+    // Core
     const core = ctx.createRadialGradient(
       ball.x,
       ball.y,
@@ -439,7 +428,7 @@ export default function Component() {
     ctx.fill()
 
     // Particles
-    if (vNow > 0.04) addParticles(vNow, canvas)
+    if (vNow > 0.04) addParticles(vNow)
     ball.particles.forEach((p, i) => {
       p.x += p.vx
       p.y += p.vy
@@ -455,17 +444,18 @@ export default function Component() {
     })
     ctx.shadowBlur = 0
 
-    // Frequency bars around ball (bright)
-    if (analyserRef.current && dataArrayRef.current) {
-      const arr = dataArrayRef.current
+    // Frequency bars
+    const analyser2 = analyserRef.current
+    const arr2 = dataArrayRef.current
+    if (analyser2 && arr2) {
       const barCount = 32
-      const step = Math.floor(arr.length / barCount)
+      const step = Math.floor(arr2.length / barCount)
       const angleStep = (Math.PI * 2) / barCount
       ctx.save()
       ctx.globalCompositeOperation = "lighter"
       for (let i = 0; i < barCount; i++) {
         const angle = i * angleStep
-        const amp = Math.min(1, (arr[i * step] / 255) * 3)
+        const amp = Math.min(1, (arr2[i * step] / 255) * 3)
         const len = amp * 70 * (0.8 + vNow * 0.5)
         const sx =
           ball.x + Math.cos(angle) * (ball.currentRadius + 12)
@@ -490,10 +480,10 @@ export default function Component() {
       ctx.restore()
     }
 
-    // Color bursts (on beats)
+    // Bursts
     drawBursts(ctx, dt, ball.hue)
 
-    // Convert to colored ASCII overlay
+    // ASCII overlay
     convertToAscii()
 
     animationRef.current = requestAnimationFrame(animate)
@@ -529,19 +519,16 @@ export default function Component() {
           },
         } as MediaStreamConstraints
 
-        const stream = await navigator.mediaDevices.getUserMedia(
-          constraints
-        )
+        const stream =
+          await navigator.mediaDevices.getUserMedia(constraints)
         streamRef.current = stream
 
         const AudioCtx =
-          window.AudioContext ||
-          // @ts-ignore
-          window.webkitAudioContext
+          (window as any).AudioContext ||
+          (window as any).webkitAudioContext
         const audioContext = new AudioCtx({
           sampleRate: 48000,
         })
-
         const analyser = audioContext.createAnalyser()
         const source = audioContext.createMediaStreamSource(stream)
 
@@ -549,7 +536,7 @@ export default function Component() {
         analyser.smoothingTimeConstant = 0.5
 
         const gainNode = audioContext.createGain()
-        gainNode.gain.value = 3.0 // global boost
+        gainNode.gain.value = 3.0
         source.connect(gainNode)
         gainNode.connect(analyser)
 
@@ -564,32 +551,21 @@ export default function Component() {
     }
 
     initAudio()
-
-    setTimeout(() => {
-      animationRef.current = requestAnimationFrame(animate)
-    }, 80)
+    animationRef.current = requestAnimationFrame(animate)
 
     return () => {
       window.removeEventListener("resize", resize)
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current)
       }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop())
-      }
-      if (audioContextRef.current) {
-        audioContextRef.current.close()
-      }
+      streamRef.current?.getTracks().forEach((t) => t.stop())
+      audioContextRef.current?.close()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (
     <div className="fixed inset-0 bg-black">
-      {/* Hidden render canvas (source for ASCII sampling) */}
       <canvas ref={canvasRef} className="w-full h-full opacity-0" />
-
-      {/* Colored ASCII overlay canvas */}
       <canvas
         ref={asciiCanvasRef}
         className="fixed inset-0 w-full h-full pointer-events-none"
